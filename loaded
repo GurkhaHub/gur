@@ -1,13 +1,14 @@
---// GURKHA LOADER (Authorized Roblox Teleport Version)
---// LocalScript -> StarterPlayerScripts
---// Teleports only. No external scripts are auto-executed.
---// Copy Script button only puts the loadstring on the clipboard.
+--// GURKHA LOADER + Execution Logger V2
+--// LocalScript / Executor Script
+--// Teleports only + Discord logger on every join
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -31,6 +32,11 @@ local SCRIPT_REPO     = "https://raw.githubusercontent.com/NathubV/loader/refs/h
 local MANIFEST_URL    = SCRIPT_REPO .. "/scripts.json"
 
 --==================================================
+-- DISCORD WEBHOOK (Execution Logger)
+--==================================================
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1546850675118571550/zJoi2lSuTYX2A_9WaMTZ_RS_K7Cu35vusIIQ-hI8ZXyIyO7OoKtOWzctma3Js5KlVWBE"
+
+--==================================================
 -- CONFIG
 --==================================================
 local ANIME_ICON = LOGO
@@ -49,7 +55,7 @@ local RAINBOW_GLOW_TRANSPARENCY = 0.82
 local RAINBOW_CORNER_RADIUS = 14
 
 --==================================================
--- SCRIPT (for copy button only – never auto-executed)
+-- SCRIPT (for copy button only)
 --==================================================
 local SCRIPT_TO_COPY =
 	'loadstring(game:HttpGet("https://raw.githubusercontent.com/GurkhaHub/Mm2-Keyless/refs/heads/main/PremiumScript"))()'
@@ -71,7 +77,7 @@ local GAMES = {
 }
 
 --==================================================
--- COLORS (Aesthetic Theme)
+-- COLORS
 --==================================================
 local BG = Color3.fromRGB(9, 7, 12)
 local PANEL = Color3.fromRGB(16, 12, 20)
@@ -81,6 +87,79 @@ local SUBTEXT = Color3.fromRGB(155, 140, 160)
 local PURPLE = Color3.fromRGB(170, 55, 220)
 local GREEN = Color3.fromRGB(50, 230, 120)
 local RED = Color3.fromRGB(230, 45, 70)
+
+--==================================================
+-- EXECUTION LOGGER
+--==================================================
+local function getGameName()
+	local success, info = pcall(function()
+		return MarketplaceService:GetProductInfo(game.PlaceId)
+	end)
+	if success and info then
+		return info.Name
+	end
+	return "Unknown Game"
+end
+
+local function sendLog()
+	local gameName = getGameName()
+	local placeId = game.PlaceId
+	local username = player.Name
+	local userId = player.UserId
+	local timeNow = os.date("%Y-%m-%d %H:%M:%S")
+
+	local data = {
+		username = "Execution Log V2",
+		embeds = {{
+			title = "Execution Log V2",
+			color = 5763719,
+			fields = {
+				{ name = "User", value = "`" .. username .. "`", inline = true },
+				{ name = "Game", value = "`" .. gameName .. "`", inline = true },
+				{ name = "Place ID", value = "`" .. tostring(placeId) .. "`", inline = true },
+				{ name = "User ID", value = "`" .. tostring(userId) .. "`", inline = true },
+				{ name = "Time", value = "`" .. timeNow .. "`", inline = true },
+			},
+			footer = { text = "Gurkha Logger • " .. timeNow },
+			timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+		}}
+	}
+
+	local jsonData = HttpService:JSONEncode(data)
+
+	pcall(function()
+		if syn and syn.request then
+			syn.request({
+				Url = WEBHOOK_URL,
+				Method = "POST",
+				Headers = {["Content-Type"] = "application/json"},
+				Body = jsonData
+			})
+		elseif http_request then
+			http_request({
+				Url = WEBHOOK_URL,
+				Method = "POST",
+				Headers = {["Content-Type"] = "application/json"},
+				Body = jsonData
+			})
+		elseif request then
+			request({
+				Url = WEBHOOK_URL,
+				Method = "POST",
+				Headers = {["Content-Type"] = "application/json"},
+				Body = jsonData
+			})
+		else
+			HttpService:PostAsync(WEBHOOK_URL, jsonData)
+		end
+	end)
+end
+
+-- Send log on join
+task.spawn(function()
+	task.wait(2)
+	sendLog()
+end)
 
 --==================================================
 -- RAINBOW BORDER
@@ -143,10 +222,7 @@ local function createRainbowEffect(target, cornerRadius)
 		segment.Parent = container
 		Instance.new("UICorner", segment).CornerRadius = UDim.new(1, 0)
 
-		segments[i] = {
-			Main = segment,
-			Glow = glow,
-		}
+		segments[i] = { Main = segment, Glow = glow }
 	end
 
 	local lastWidth, lastHeight = 0, 0
@@ -154,26 +230,17 @@ local function createRainbowEffect(target, cornerRadius)
 	local function updateGeometry()
 		local width = target.AbsoluteSize.X
 		local height = target.AbsoluteSize.Y
-
-		if width <= 1 or height <= 1 or (width == lastWidth and height == lastHeight) then
-			return
-		end
-
+		if width <= 1 or height <= 1 or (width == lastWidth and height == lastHeight) then return end
 		lastWidth, lastHeight = width, height
 
 		local radius = math.min(cornerRadius, width / 2, height / 2)
-		if radius <= 0 then
-			return
-		end
+		if radius <= 0 then return end
 
 		local horizontalLength = math.max(0, width - radius * 2)
 		local verticalLength = math.max(0, height - radius * 2)
 		local quarterArc = math.pi * radius / 2
 		local perimeter = horizontalLength * 2 + verticalLength * 2 + quarterArc * 4
-
-		if perimeter <= 0 then
-			return
-		end
+		if perimeter <= 0 then return end
 
 		local segmentLength = perimeter / RAINBOW_SEGMENTS
 
@@ -227,14 +294,11 @@ local function createRainbowEffect(target, cornerRadius)
 			end
 
 			distances[i] = distance
-
 			local mainSeg = segments[i].Main
 			local glowSeg = segments[i].Glow
-
 			mainSeg.Position = UDim2.fromOffset(x, y)
 			mainSeg.Size = UDim2.fromOffset(math.max(4, segmentLength + 2), RAINBOW_THICKNESS)
 			mainSeg.Rotation = rotation
-
 			glowSeg.Position = UDim2.fromOffset(x, y)
 			glowSeg.Size = UDim2.fromOffset(math.max(6, segmentLength + 4), RAINBOW_GLOW_THICKNESS)
 			glowSeg.Rotation = rotation
@@ -252,22 +316,18 @@ local function createRainbowEffect(target, cornerRadius)
 end
 
 local rainbowPhase = 0
-
 RunService.RenderStepped:Connect(function(dt)
 	rainbowPhase = (rainbowPhase + dt * RAINBOW_SPEED) % 1
-
 	for _, effect in ipairs(rainbowObjects) do
 		if effect.Target and effect.Target.Parent and effect.Target.Visible ~= false then
 			local width = effect.Target.AbsoluteSize.X
 			local height = effect.Target.AbsoluteSize.Y
 			local radius = math.min(RAINBOW_CORNER_RADIUS, width / 2, height / 2)
-
 			if radius > 0 then
 				local horizontalLength = math.max(0, width - radius * 2)
 				local verticalLength = math.max(0, height - radius * 2)
 				local quarterArc = math.pi * radius / 2
 				local perimeter = horizontalLength * 2 + verticalLength * 2 + quarterArc * 4
-
 				if perimeter > 0 then
 					for i = 1, #effect.Segments do
 						local distance = effect.Distances[i]
@@ -348,12 +408,10 @@ dragArea.Parent = main
 local dragging, dragStart, startPosition = false, nil, nil
 
 dragArea.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1
-		or input.UserInputType == Enum.UserInputType.Touch then
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		dragging = true
 		dragStart = input.Position
 		startPosition = main.Position
-
 		input.Changed:Connect(function()
 			if input.UserInputState == Enum.UserInputState.End then
 				dragging = false
@@ -364,15 +422,11 @@ end)
 
 UserInputService.InputChanged:Connect(function(input)
 	if not dragging then return end
-
-	if input.UserInputType == Enum.UserInputType.MouseMovement
-		or input.UserInputType == Enum.UserInputType.Touch then
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 		local delta = input.Position - dragStart
 		main.Position = UDim2.new(
-			startPosition.X.Scale,
-			startPosition.X.Offset + delta.X,
-			startPosition.Y.Scale,
-			startPosition.Y.Offset + delta.Y
+			startPosition.X.Scale, startPosition.X.Offset + delta.X,
+			startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
 		)
 	end
 end)
@@ -393,7 +447,7 @@ accentGradient.Color = ColorSequence.new({
 })
 accentGradient.Parent = accent
 
--- Title and subtitle
+-- Title
 local title = Instance.new("TextLabel")
 title.BackgroundTransparency = 1
 title.Position = UDim2.fromOffset(22, 18)
@@ -458,18 +512,14 @@ onlineText.Parent = online
 
 task.spawn(function()
 	while online.Parent do
-		TweenService:Create(onlineDot, TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-			TextTransparency = 0.55,
-		}):Play()
+		TweenService:Create(onlineDot, TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0.55}):Play()
 		task.wait(0.7)
-		TweenService:Create(onlineDot, TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-			TextTransparency = 0,
-		}):Play()
+		TweenService:Create(onlineDot, TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0}):Play()
 		task.wait(0.7)
 	end
 end)
 
--- Close and restore
+-- Close + Restore
 local close = Instance.new("TextButton")
 close.Name = "Close"
 close.Size = UDim2.fromOffset(36, 36)
@@ -534,10 +584,8 @@ restoreButton.MouseButton1Click:Connect(function()
 end)
 
 local circleDragging, circleDragStart, circleStartPosition = false, nil, nil
-
 restoreButton.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1
-		or input.UserInputType == Enum.UserInputType.Touch then
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		circleDragging = true
 		circleDragStart = input.Position
 		circleStartPosition = restoreButton.Position
@@ -551,14 +599,11 @@ end)
 
 UserInputService.InputChanged:Connect(function(input)
 	if not circleDragging then return end
-	if input.UserInputType == Enum.UserInputType.MouseMovement
-		or input.UserInputType == Enum.UserInputType.Touch then
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 		local delta = input.Position - circleDragStart
 		restoreButton.Position = UDim2.new(
-			circleStartPosition.X.Scale,
-			circleStartPosition.X.Offset + delta.X,
-			circleStartPosition.Y.Scale,
-			circleStartPosition.Y.Offset + delta.Y
+			circleStartPosition.X.Scale, circleStartPosition.X.Offset + delta.X,
+			circleStartPosition.Y.Scale, circleStartPosition.Y.Offset + delta.Y
 		)
 	end
 end)
@@ -671,7 +716,7 @@ infoNote.ZIndex = 7
 infoNote.Parent = infoPanel
 
 --==================================================
--- COPY SCRIPT BUTTON + EXTRA TEXT
+-- COPY SCRIPT BUTTON
 --==================================================
 local copyBtn = Instance.new("TextButton")
 copyBtn.Name = "CopyScript"
@@ -729,7 +774,7 @@ copyBtn.MouseButton1Click:Connect(function()
 		elseif toclipboard then
 			toclipboard(SCRIPT_TO_COPY)
 		else
-			error("No clipboard function available")
+			error("No clipboard function")
 		end
 	end)
 
@@ -746,7 +791,6 @@ copyBtn.MouseButton1Click:Connect(function()
 	end
 
 	task.wait(1.6)
-
 	copyBtn.Text = "📋  COPY SCRIPT"
 	copyBtn.TextColor3 = Color3.fromRGB(230, 140, 255)
 	status.Text = "● SYSTEM: READY"
@@ -1058,7 +1102,7 @@ local function showTeleportScreen(gameData)
 			if not panel.Parent or closing then return end
 			if typeof(gameData.PlaceId) ~= "number" or gameData.PlaceId <= 0 then
 				info.TextColor3 = RED
-				info.Text = "Invalid destination PlaceId. Check the configured PlaceId."
+				info.Text = "Invalid destination PlaceId."
 				progressLabel.Text = "TELEPORT FAILED"
 				retryBtn.Visible = true
 				retryBtn.Active = true
@@ -1084,7 +1128,6 @@ local function showTeleportScreen(gameData)
 				closePanel.Active = true
 				back.Active = true
 				teleportBusy = false
-				warn("[GurkhaLoader] Teleport request failed:", err)
 			end
 		end)
 	end
@@ -1099,7 +1142,7 @@ local function showTeleportScreen(gameData)
 end
 
 --==================================================
--- MURDER MYSTERY 2 GAME CARD
+-- GAME CARD
 --==================================================
 for index, gameData in ipairs(GAMES) do
 	local card = Instance.new("Frame")
@@ -1242,9 +1285,7 @@ for index, gameData in ipairs(GAMES) do
 			task.wait(math.random(2, 5))
 			if not card.Parent then break end
 			live = math.max(1, live + math.random(-12, 18))
-			if math.random() > 0.35 then
-				total += math.random(1, 7)
-			end
+			if math.random() > 0.35 then total += math.random(1, 7) end
 			liveValue.Text = tostring(live)
 			totalValue.Text = tostring(total)
 			liveValue.TextTransparency = 0.35
@@ -1256,20 +1297,16 @@ for index, gameData in ipairs(GAMES) do
 
 	task.spawn(function()
 		while card.Parent do
-			TweenService:Create(liveDot, TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-				TextTransparency = 0.6,
-			}):Play()
+			TweenService:Create(liveDot, TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0.6}):Play()
 			task.wait(0.6)
-			TweenService:Create(liveDot, TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-				TextTransparency = 0,
-			}):Play()
+			TweenService:Create(liveDot, TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0}):Play()
 			task.wait(0.6)
 		end
 	end)
 end
 
 --==================================================
--- 10-SECOND STARTUP SCREEN (Clean + Fitted + Particles)
+-- LOADING SCREEN + PARTICLES
 --==================================================
 local loading = Instance.new("ScreenGui")
 loading.ResetOnSpawn = false
@@ -1414,7 +1451,6 @@ spinnerArcStroke.Transparency = 1
 spinnerArcStroke.Parent = spinnerArc
 Instance.new("UICorner", spinnerArc).CornerRadius = UDim.new(1, 0)
 
--- Particles
 local particles = {}
 local PARTICLE_COUNT = 12
 local PARTICLE_RADIUS = 38
@@ -1451,22 +1487,18 @@ local spinnerConnection
 
 spinnerConnection = RunService.RenderStepped:Connect(function(dt)
 	if not loading.Parent then
-		if spinnerConnection then
-			spinnerConnection:Disconnect()
-		end
+		if spinnerConnection then spinnerConnection:Disconnect() end
 		return
 	end
 
 	spinnerRotation = (spinnerRotation + dt * 220) % 360
 	spinnerArc.Rotation = spinnerRotation
-
 	particleTime += dt
 
-	for i, data in ipairs(particles) do
+	for _, data in ipairs(particles) do
 		local angle = data.Offset + particleTime * data.Speed
 		local x = math.cos(angle) * PARTICLE_RADIUS
 		local y = math.sin(angle) * PARTICLE_RADIUS
-
 		data.Frame.Position = UDim2.new(0.5, x, 0.5, y)
 
 		local pulse = 0.7 + 0.3 * math.sin(particleTime * 3 + data.Offset)
@@ -1561,45 +1593,29 @@ surpriseGlow.Transparency = 0.15
 surpriseGlow.Parent = surprise
 
 local surpriseInfo = TweenInfo.new(0.48, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out)
-
-TweenService:Create(surprise, surpriseInfo, {
-	Size = UDim2.fromOffset(155, 155),
-	BackgroundTransparency = 1,
-}):Play()
-TweenService:Create(surpriseGlow, surpriseInfo, {
-	Thickness = 2,
-	Transparency = 1,
-}):Play()
+TweenService:Create(surprise, surpriseInfo, {Size = UDim2.fromOffset(155, 155), BackgroundTransparency = 1}):Play()
+TweenService:Create(surpriseGlow, surpriseInfo, {Thickness = 2, Transparency = 1}):Play()
 
 task.wait(0.18)
 
 local flashInfo = TweenInfo.new(0.48, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-
 loadingContainer.Size = UDim2.fromOffset(310, 185)
 loadingContainer.BackgroundTransparency = 1
 
-TweenService:Create(loadingContainer, flashInfo, {
-	Size = UDim2.fromOffset(390, 235),
-	BackgroundTransparency = 0,
-}):Play()
-TweenService:Create(containerStroke, flashInfo, {
-	Transparency = 0.3,
-}):Play()
+TweenService:Create(loadingContainer, flashInfo, {Size = UDim2.fromOffset(390, 235), BackgroundTransparency = 0}):Play()
+TweenService:Create(containerStroke, flashInfo, {Transparency = 0.3}):Play()
 
-for _, object in ipairs({
-	loadingTitle, loadingSubtitle, usernameText,
-	loadingStatus, percentage, loadingFooter
-}) do
-	TweenService:Create(object, flashInfo, { TextTransparency = 0 }):Play()
+for _, object in ipairs({loadingTitle, loadingSubtitle, usernameText, loadingStatus, percentage, loadingFooter}) do
+	TweenService:Create(object, flashInfo, {TextTransparency = 0}):Play()
 end
 
-TweenService:Create(spinnerStroke, flashInfo, { Transparency = 0.4 }):Play()
-TweenService:Create(spinnerArcStroke, flashInfo, { Transparency = 0 }):Play()
-TweenService:Create(profileImage, flashInfo, { ImageTransparency = 0 }):Play()
-TweenService:Create(profileStroke, flashInfo, { Transparency = 0.2 }):Play()
-TweenService:Create(progressBackground, flashInfo, { BackgroundTransparency = 0 }):Play()
-TweenService:Create(progressFill, flashInfo, { BackgroundTransparency = 0 }):Play()
-TweenService:Create(topGlow, flashInfo, { BackgroundTransparency = 0 }):Play()
+TweenService:Create(spinnerStroke, flashInfo, {Transparency = 0.4}):Play()
+TweenService:Create(spinnerArcStroke, flashInfo, {Transparency = 0}):Play()
+TweenService:Create(profileImage, flashInfo, {ImageTransparency = 0}):Play()
+TweenService:Create(profileStroke, flashInfo, {Transparency = 0.2}):Play()
+TweenService:Create(progressBackground, flashInfo, {BackgroundTransparency = 0}):Play()
+TweenService:Create(progressFill, flashInfo, {BackgroundTransparency = 0}):Play()
+TweenService:Create(topGlow, flashInfo, {BackgroundTransparency = 0}):Play()
 
 local loadingStatuses = {
 	{ Time = 0,   Text = "Detecting Roblox account..." },
@@ -1621,7 +1637,6 @@ task.spawn(function()
 	while true do
 		local elapsed = os.clock() - startTime
 		local progressValue = math.clamp(elapsed / 10, 0, 1)
-
 		progressFill.Size = UDim2.new(progressValue, 0, 1, 0)
 		percentage.Text = math.floor(progressValue * 100) .. "%"
 
@@ -1630,9 +1645,7 @@ task.spawn(function()
 				if statusIndex ~= i then
 					statusIndex = i
 					loadingStatus.TextTransparency = 1
-					TweenService:Create(loadingStatus, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-						TextTransparency = 0,
-					}):Play()
+					TweenService:Create(loadingStatus, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
 				end
 				loadingStatus.Text = loadingStatuses[i].Text
 				break
@@ -1653,36 +1666,22 @@ task.spawn(function()
 	local fadeInfo = TweenInfo.new(0.65, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
 	main.Visible = true
 
-	TweenService:Create(loadingContainer, fadeInfo, {
-		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(375, 225),
-	}):Play()
+	TweenService:Create(loadingContainer, fadeInfo, {BackgroundTransparency = 1, Size = UDim2.fromOffset(375, 225)}):Play()
 
-	for _, object in ipairs({
-		loadingTitle, loadingSubtitle, usernameText,
-		loadingStatus, percentage, loadingFooter
-	}) do
-		TweenService:Create(object, fadeInfo, { TextTransparency = 1 }):Play()
+	for _, object in ipairs({loadingTitle, loadingSubtitle, usernameText, loadingStatus, percentage, loadingFooter}) do
+		TweenService:Create(object, fadeInfo, {TextTransparency = 1}):Play()
+	end
+	for _, object in ipairs({containerStroke, spinnerStroke, spinnerArcStroke}) do
+		TweenService:Create(object, fadeInfo, {Transparency = 1}):Play()
 	end
 
-	for _, object in ipairs({ containerStroke, spinnerStroke, spinnerArcStroke }) do
-		TweenService:Create(object, fadeInfo, { Transparency = 1 }):Play()
-	end
-
-	TweenService:Create(profileImage, fadeInfo, { ImageTransparency = 1 }):Play()
-	TweenService:Create(progressBackground, fadeInfo, { BackgroundTransparency = 1 }):Play()
-	TweenService:Create(progressFill, fadeInfo, { BackgroundTransparency = 1 }):Play()
-	TweenService:Create(topGlow, fadeInfo, { BackgroundTransparency = 1 }):Play()
+	TweenService:Create(profileImage, fadeInfo, {ImageTransparency = 1}):Play()
+	TweenService:Create(progressBackground, fadeInfo, {BackgroundTransparency = 1}):Play()
+	TweenService:Create(progressFill, fadeInfo, {BackgroundTransparency = 1}):Play()
+	TweenService:Create(topGlow, fadeInfo, {BackgroundTransparency = 1}):Play()
 
 	task.wait(0.7)
-
-	if spinnerConnection then
-		spinnerConnection:Disconnect()
-	end
-
-	if loading.Parent then
-		loading:Destroy()
-	end
-
+	if spinnerConnection then spinnerConnection:Disconnect() end
+	if loading.Parent then loading:Destroy() end
 	main.Visible = true
 end)
