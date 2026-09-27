@@ -12,33 +12,55 @@ local scriptToRun = [[
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/GurkhaHub/Mm2-Keyless/refs/heads/main/PremiumScript"))()
 ]]
 
--- Queue the script (supports almost every executor)
+-- Queue the script (Delta prioritized + common aliases)
 local queued = false
 
-if syn and syn.queue_on_teleport then
-	syn.queue_on_teleport(scriptToRun)
-	queued = true
-elseif fluxus and fluxus.queue_on_teleport then
-	fluxus.queue_on_teleport(scriptToRun)
-	queued = true
-elseif delta and delta.queue_on_teleport then
-	delta.queue_on_teleport(scriptToRun)
-	queued = true
-elseif potassium and potassium.queue_on_teleport then
-	potassium.queue_on_teleport(scriptToRun)
-	queued = true
-elseif madium and madium.queue_on_teleport then
-	madium.queue_on_teleport(scriptToRun)
-	queued = true
-elseif queue_on_teleport then
-	queue_on_teleport(scriptToRun)
-	queued = true
-elseif getgenv and getgenv().queue_on_teleport then
-	getgenv().queue_on_teleport(scriptToRun)
-	queued = true
-elseif queueonteleport then
-	queueonteleport(scriptToRun)
-	queued = true
+local function tryQueue(fn)
+	if type(fn) == "function" then
+		local ok = pcall(fn, scriptToRun)
+		if ok then
+			queued = true
+			return true
+		end
+	end
+	return false
+end
+
+-- 1. Delta-specific (most common patterns)
+if delta then
+	if tryQueue(delta.queue_on_teleport) then
+		-- success
+	elseif tryQueue(delta.queueonteleport) then
+		-- success
+	elseif tryQueue(delta.QueueOnTeleport) then
+		-- success
+	end
+end
+
+-- 2. Global UNC-style functions (Delta usually supports these)
+if not queued then
+	tryQueue(queue_on_teleport)
+end
+if not queued then
+	tryQueue(queueonteleport)
+end
+if not queued then
+	tryQueue(QueueOnTeleport)
+end
+
+-- 3. Other executors (kept for compatibility)
+if not queued then
+	if syn and syn.queue_on_teleport then
+		tryQueue(syn.queue_on_teleport)
+	elseif fluxus and fluxus.queue_on_teleport then
+		tryQueue(fluxus.queue_on_teleport)
+	elseif potassium and potassium.queue_on_teleport then
+		tryQueue(potassium.queue_on_teleport)
+	elseif madium and madium.queue_on_teleport then
+		tryQueue(madium.queue_on_teleport)
+	elseif getgenv and getgenv().queue_on_teleport then
+		tryQueue(getgenv().queue_on_teleport)
+	end
 end
 
 -- Send Discord webhook log
@@ -70,7 +92,7 @@ local function sendWebhook()
 				},
 				{
 					name = "Action",
-					value = queued and "Queued Teleport to MM2" or "Teleport to MM2 (No Queue)",
+					value = queued and "Queued Teleport to MM2 (Delta)" or "Teleport to MM2 (No Queue)",
 					inline = false
 				}
 			},
