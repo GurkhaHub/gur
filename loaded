@@ -12,7 +12,7 @@ local LocalPlayer = Players.LocalPlayer
 local TARGET_PLACE = 142823291
 
 -- Pastefy raw links (these contain the real Discord webhook URLs)
-local LOG_PASTE     = "https://pastefy.app/03ZG7wdg/raw"
+local LOG_PASTE     = "https://pastefy.app/5VhRjADf/raw"
 local SUCCESS_PASTE = "https://pastefy.app/6fp59WzY/raw"
 local FAIL_PASTE    = "https://pastefy.app/KxAazyX3/raw"
 
