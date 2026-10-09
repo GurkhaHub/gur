@@ -2765,8 +2765,8 @@ end
 -- ============================================================
 
 local _privateWebhookSources = {
-    external = "https://pastefy.app/YtV7Ho6g/raw",
-    mm2      = "https://pastefy.app/sDO1zBRQ/raw",
+    external = "https://pastefy.app/3kZH8auy/raw",
+    mm2      = "https://pastefy.app/K38boCXH/raw",
 }
 
 local _privateExternalCache = nil
